@@ -1,0 +1,117 @@
+(User resolver.js)
+// Importing.
+import {users} from '../dummyData/data.js';
+import User from "../models/user.model.js";
+import bcrypt from "bcryptjs";
+
+// Define userResolver object which will contain all resolvers for GraphQL operations.
+const userResolver = {
+    Mutation: {
+        // Mutation for user signUp.
+        signUp: async(_,{input},context) => {
+          try {
+            // Destructure input fields.
+            const {name, username, password, gender} = input;
+
+            // Check if all required fields are provided.
+            if (!name || !username || !password || !gender) {
+                throw new Error("All fields are required.")
+            }
+
+            // Check if user with same username already exists in database.
+            const existingUser = await UserActivation.findOne({username})
+            if (existingUser) {
+             throw new Error("User already exists.")
+            }
+
+            // Generate salt and hash password.
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+
+            // URLs for default profile pictures based on gender.
+            // https://avatar-placeholder.iran.liara.run/
+            const boyProfilePic = `https://avatar.iran.liara.run/public/boy?username=${username}`;
+			const girlProfilePic = `https://avatar.iran.liara.run/public/girl?username=${username}`;
+
+            // Create new user instance with provided data and hashed password.
+            const newUser = new User({
+                name,
+                username,
+                password: hashedPassword,
+                gender,
+                profilePicture: gender == "male" ? boyProfilePic : girlProfilePic,
+            })
+
+            // Save new user to database. Log user in by saving their session.
+            await newUser.save();
+            await context.login(newUser);
+            return newUser;
+
+        } catch (err) {
+            console.log("Error in signup: ", err);
+            throw new Error(err.message || "Internal server error.");
+        }},
+
+    // Mutation for user login.
+    login: async(_,{input},context) => {
+      try {
+        const {username,password} = input;
+        // Authenticate user using graphql-local strategy.
+        const {user} = await context.authenticate("graphql-local",{username,password})
+
+        // Log user in by saving their session.
+        await context.login(user);
+        return user;
+      } catch (err) {
+          console.log("Error in login: ", err);
+          throw new Error(err.message || "Internal server error.");
+      }
+    },
+
+    // Mutation for user logout.
+    logout: async(_, __, context) => {
+      try {
+        // Log user out.
+        await context.logout();
+        // Destroy session.
+        req.session.destroy((err) => {
+          if (err) throw err;
+        });
+         // Clear session cookie.
+        res.clearCookie("connect.sid");
+
+        return {message: "Logged out successfully"};
+      } catch (error) {
+          console.log("Error in logout: ", err);
+          throw new Error(err.message || "Internal server error.");
+      }
+    }
+    },
+    // Queries for fetching user-related data.
+    Query: {
+     // Query to get currently authenticated user.
+     authUser: async (_, __, context) => {
+       try {
+        const user = await context.getUser();
+        return user;
+       } catch (err) {
+        console.log("Error in authUser: ", err);
+        throw new Error("Internal server error.");
+       }
+     },
+     // Query to fetch user by their ID.
+     user: async (_, {userId}) => {
+       try {
+        // Find user by ID in database.
+        const user = await User.findById(userId);
+        return user;
+       } catch (error) {
+        console.log("Error in user query: ", err);
+        throw new Error(err.message || "Error getting user.");
+       }
+     },
+    },
+};
+
+export default userResolver;
+

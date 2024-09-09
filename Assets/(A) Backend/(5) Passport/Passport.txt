@@ -1,0 +1,123 @@
+(Passport)
+(index.js)
+// Importing
+import express from 'express';
+import http from 'http';
+import cors from 'cors';
+import { ApolloServer } from '@apollo/server';
+import { expressMiddleware } from '@apollo/server/express4';
+import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+import mergedResolvers from './resolvers/index.js';
+import mergedTypeDefs from './typeDefs/index.js';
+import dotenv from "dotenv";
+import { connectDB } from './db/connectDB.js';
+dotenv.config();
+
+// App
+const app = express();
+const httpServer = http.createServer(app);
+
+// Server
+const server = new ApolloServer({
+  resolvers: mergedResolvers,
+  typeDefs: mergedTypeDefs,
+  plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
+});
+await server.start();
+app.use(
+  '/',
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true,
+  }),
+  express.json(),
+  expressMiddleware(server, {
+    context: async ({ req, res }) => buildContext({ req, res }),
+  }),
+);
+await new Promise((resolve) => httpServer.listen({ port: 4000 }, resolve));
+console.log(`🚀 Server ready at http://localhost:4000/`);
+await connectDB();
+
+// Passport
+import passport from 'passport';
+import session from 'express-session';
+import connectMongo from 'connect-mongodb-session';
+import { buildContext } from "graphql-passport";
+import { configurePassport } from './passport/passport.config.js';
+
+// Create MongoDB store for sessions.
+const MongoDBStore = connectMongo(session);
+
+// Create instance of MongoDBStore, specifying MongoDB connection URL and collection name for storing sessions.
+const store = new MongoDBStore({
+  url: process.env.MONGO_URI,
+  colletion: "sessions",
+});
+
+// Set up event listener to handle errors from store.
+store.on("error", (err) => console.log(err));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET, // Secret key for signing session IDs from environment variables.
+    resave: false, // Whether to save session to store on every request.
+    saveUninitialized: false, // Ensures we dont create multiple sessions for one user.
+    cookie: {
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+      httpOnly: true, // Prevents cross site scripting (XSS) attacks.
+    },
+    store: store  // Use previously created MongoDB store to save session data.
+  })
+)
+
+// Initialize Passport for authentication and session management.
+app.use(passport.initialize());  // Initialize Passport middleware
+app.use(passport.session());     // Initialize Passport session handling
+configurePassport();
+
+
+
+(passport.config.js)
+import passport from "passport";
+import bcrypt from "bcryptjs";
+
+import User from "../models/user.model.js";
+import { GraphQLLocalStrategy } from "graphql-passport";
+
+export const configurePassport = async () => {
+	passport.serializeUser((user, done) => {
+		console.log("Serializing user");
+		done(null, user.id);
+	});
+
+	passport.deserializeUser(async (id, done) => {
+		console.log("Deserializing user");
+		try {
+			const user = await User.findById(id);
+			done(null, user);
+		} catch (err) {
+			done(err);
+		}
+	});
+
+	passport.use(
+		new GraphQLLocalStrategy(async (username, password, done) => {
+			try {
+				const user = await User.findOne({ username });
+				if (!user) {
+					throw new Error("Invalid username or password");
+				}
+				const validPassword = await bcrypt.compare(password, user.password);
+
+				if (!validPassword) {
+					throw new Error("Invalid username or password");
+				}
+
+				return done(null, user);
+			} catch (err) {
+				return done(err);
+			}
+		})
+	);
+};
