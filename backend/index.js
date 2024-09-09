@@ -13,9 +13,11 @@ import session from 'express-session';
 import connectMongo from 'connect-mongodb-session';
 import { buildContext } from 'graphql-passport';
 import { configurePassport } from './passport/passport.config.js';
+import path from 'path';
 
 dotenv.config();
 
+const __dirname = path.resolve();
 const app = express();
 const httpServer = http.createServer(app);
 
@@ -59,6 +61,14 @@ app.use(
     context: async ({ req, res }) => buildContext({ req, res }),
   })
 );
+
+
+
+// DEPLOYMENT.
+app.use(express.static(path.join(__dirname, "frontend/dist")));
+app.get("*", (req, res) => {
+	res.sendFile(path.join(__dirname, "frontend/dist", "index.html"));
+});
 
 httpServer.listen({ port: 4000 }, () => {
   console.log(`🚀 Server ready at http://localhost:4000/graphql`);
