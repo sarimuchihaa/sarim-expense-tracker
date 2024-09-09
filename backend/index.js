@@ -53,7 +53,7 @@ configurePassport();
 app.use(
   '/graphql',
   cors({
-    origin: 'http://localhost:3000',
+    origin: ['http://localhost:3000','https://expense-tracker-vrg4.onrender.com'],
     credentials: true,
   }),
   express.json(),
