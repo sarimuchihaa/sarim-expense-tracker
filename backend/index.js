@@ -13,13 +13,17 @@ import session from 'express-session';
 import connectMongo from 'connect-mongodb-session';
 import { buildContext } from 'graphql-passport';
 import { configurePassport } from './passport/passport.config.js';
-import path from 'path';
 
 dotenv.config();
 
-const __dirname = path.resolve();
 const app = express();
 const httpServer = http.createServer(app);
+
+// CORS configuration
+const corsOptions = {
+  origin: ['http://localhost:3000', 'https://expense-tracker-vrg4.onrender.com'], // Add allowed origins here
+  credentials: true,
+};
 
 const server = new ApolloServer({
   typeDefs: mergedTypeDefs,
@@ -30,6 +34,7 @@ const server = new ApolloServer({
 await server.start();
 await connectDB();
 
+// Apply session middleware
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
@@ -46,29 +51,22 @@ app.use(
   })
 );
 
+// Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
 configurePassport();
 
+// Apply CORS middleware before GraphQL middleware
+app.use(cors(corsOptions));
+
+// GraphQL Middleware
 app.use(
   '/graphql',
-  cors({
-    origin: ['http://localhost:3000','https://expense-tracker-vrg4.onrender.com'],
-    credentials: true,
-  }),
   express.json(),
   expressMiddleware(server, {
     context: async ({ req, res }) => buildContext({ req, res }),
   })
 );
-
-
-
-// DEPLOYMENT.
-app.use(express.static(path.join(__dirname, "frontend/dist")));
-app.get("*", (req, res) => {
-	res.sendFile(path.join(__dirname, "frontend/dist", "index.html"));
-});
 
 httpServer.listen({ port: 4000 }, () => {
   console.log(`🚀 Server ready at http://localhost:4000/graphql`);
